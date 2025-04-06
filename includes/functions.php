@@ -7,8 +7,13 @@ function isLoggedIn() {
     return isset($_SESSION['user_id']);
 }
 
+/**
+ * Check if user is logged in as admin
+ *
+ * @return bool True if user is logged in as admin, false otherwise
+ */
 function isAdmin() {
-    return isset($_SESSION['admin_id']);
+    return isset($_SESSION['admin_id']) && !empty($_SESSION['admin_id']);
 }
 
 function requireLogin() {
