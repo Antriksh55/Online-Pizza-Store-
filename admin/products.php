@@ -292,12 +292,16 @@
                                     <?php foreach ($products as $product): ?>
                                         <tr>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <img src="../uploads/products/<?php echo $product['image_url']; ?>" 
+                                                <img src="<?php echo getUploadUrl('../uploads/products/' . $product['image_url']); ?>" 
                                                      alt="<?php echo htmlspecialchars($product['name']); ?>" 
                                                      class="h-12 w-12 rounded-full object-cover">
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="font-medium text-gray-900"><?php echo htmlspecialchars($product['name']); ?></div>
+                                                <div class="font-medium text-gray-900">
+                                                    <a href="view_product.php?id=<?php echo $product['id']; ?>" class="hover:text-indigo-600">
+                                                        <?php echo htmlspecialchars($product['name']); ?>
+                                                    </a>
+                                                </div>
                                                 <div class="text-sm text-gray-500"><?php echo strlen($product['description']) > 50 ? substr(htmlspecialchars($product['description']), 0, 47) . '...' : htmlspecialchars($product['description']); ?></div>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

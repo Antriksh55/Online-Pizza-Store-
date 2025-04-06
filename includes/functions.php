@@ -219,7 +219,12 @@ function removeFromWishlist($wishlist_id) {
     return $success;
 }
 
-// Format price
+/**
+ * Format price with currency symbol
+ * 
+ * @param float $price The price to format
+ * @return string Formatted price with currency symbol
+ */
 function formatPrice($price) {
     return '₹' . number_format($price, 2);
 }
@@ -438,5 +443,75 @@ function getUserOrders($user_id = null) {
     
     $conn->close();
     return $orders;
+}
+
+/**
+ * Get normalized upload path that works on both Windows and Unix
+ * 
+ * @param string $path Relative path from project root
+ * @return string The normalized path
+ */
+function getUploadPath($path) {
+    // Convert slashes for the current OS
+    $normalized_path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+    
+    // Make sure path is relative to project root
+    if (strpos($normalized_path, DIRECTORY_SEPARATOR) === 0) {
+        $normalized_path = substr($normalized_path, 1);
+    }
+    
+    // Get absolute path
+    $abs_path = dirname(__DIR__) . DIRECTORY_SEPARATOR . $normalized_path;
+    
+    // Create directory if it doesn't exist
+    $dir = dirname($abs_path);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    
+    return $abs_path;
+}
+
+/**
+ * Get web-accessible URL path for uploads
+ * 
+ * @param string $path Relative path from project root
+ * @return string The URL path
+ */
+function getUploadUrl($path) {
+    // Always use forward slashes for URLs
+    $url_path = str_replace('\\', '/', $path);
+    
+    // Make sure path starts with a slash for URL
+    if (strpos($url_path, '/') !== 0) {
+        $url_path = '/' . $url_path;
+    }
+    
+    return $url_path;
+}
+
+/**
+ * Get CSS class for order status badges
+ * 
+ * @param string $status Order status
+ * @return string CSS class for the badge
+ */
+function getOrderStatusClass($status) {
+    switch($status) {
+        case 'pending':
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800';
+        case 'confirmed':
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800';
+        case 'preparing':
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800';
+        case 'out_for_delivery':
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800';
+        case 'delivered':
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
+        case 'cancelled':
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800';
+        default:
+            return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800';
+    }
 }
 ?> 

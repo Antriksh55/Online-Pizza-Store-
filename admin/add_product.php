@@ -13,6 +13,7 @@
     $is_available = 1;
     $errors = [];
     $categories = ['pizza', 'sides', 'drinks', 'desserts'];
+    $success = false;
     
     // Handle form submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -26,6 +27,8 @@
         // Validate required fields
         if (empty($name)) {
             $errors['name'] = 'Product name is required';
+        } elseif (strlen($name) > 100) {
+            $errors['name'] = 'Product name cannot exceed 100 characters';
         }
         
         if (empty($description)) {
@@ -40,38 +43,38 @@
         
         if (empty($category)) {
             $errors['category'] = 'Category is required';
+        } elseif (!in_array($category, $categories)) {
+            $errors['category'] = 'Invalid category selected';
         }
         
         // Handle image upload
         $image_url = '';
         if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-            $upload_dir = '../uploads/products/';
-            
-            // Create directory if it doesn't exist
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0755, true);
-            }
-            
-            // Get file info
             $file_tmp = $_FILES['image']['tmp_name'];
             $file_name = $_FILES['image']['name'];
+            $file_size = $_FILES['image']['size'];
             $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
             
             // Check file extension
-            $allowed_exts = ['jpg', 'jpeg', 'png', 'gif'];
+            $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
             
             if (!in_array($file_ext, $allowed_exts)) {
-                $errors['image'] = 'Only JPG, JPEG, PNG, and GIF files are allowed';
+                $errors['image'] = 'Only JPG, JPEG, PNG, GIF, and WEBP files are allowed';
+            } elseif ($file_size > 2097152) { // 2MB limit
+                $errors['image'] = 'Image file size must be under 2MB';
             } else {
                 // Generate unique filename
                 $new_file_name = uniqid('product_') . '.' . $file_ext;
-                $upload_path = $upload_dir . $new_file_name;
+                $upload_dir = '../uploads/products/';
+                
+                // Use proper path handling function
+                $upload_path = getUploadPath($upload_dir . $new_file_name);
                 
                 // Move file to upload directory
                 if (move_uploaded_file($file_tmp, $upload_path)) {
                     $image_url = $new_file_name;
                 } else {
-                    $errors['image'] = 'Failed to upload image';
+                    $errors['image'] = 'Failed to upload image. Make sure the uploads directory is writable.';
                 }
             }
         } else {
@@ -79,6 +82,9 @@
             if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
                 if ($_FILES['image']['error'] === UPLOAD_ERR_NO_FILE) {
                     $errors['image'] = 'Product image is required';
+                } elseif ($_FILES['image']['error'] === UPLOAD_ERR_INI_SIZE || 
+                          $_FILES['image']['error'] === UPLOAD_ERR_FORM_SIZE) {
+                    $errors['image'] = 'Image file size exceeds the maximum limit';
                 } else {
                     $errors['image'] = 'Image upload failed: ' . $_FILES['image']['error'];
                 }
@@ -89,17 +95,47 @@
         if (empty($errors)) {
             $conn = connectDB();
             
-            $sql = "INSERT INTO products (name, description, price, category, image_url, is_available) 
-                    VALUES (?, ?, ?, ?, ?, ?)";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("ssdssi", $name, $description, $price, $category, $image_url, $is_available);
-            
-            if ($stmt->execute()) {
-                $_SESSION['success'] = "Product added successfully.";
-                header("Location: products.php");
-                exit;
-            } else {
-                $errors['general'] = "Failed to add product: " . $conn->error;
+            try {
+                // Begin transaction for data integrity
+                $conn->begin_transaction();
+                
+                $sql = "INSERT INTO products (name, description, price, category, image_url, is_available) 
+                        VALUES (?, ?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param("ssdssi", $name, $description, $price, $category, $image_url, $is_available);
+                
+                if ($stmt->execute()) {
+                    $product_id = $conn->insert_id;
+                    
+                    // Create SEO-friendly slug (optional feature)
+                    $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $name)) . '-' . $product_id;
+                    $update_sql = "UPDATE products SET slug = ? WHERE id = ?";
+                    $update_stmt = $conn->prepare($update_sql);
+                    $update_stmt->bind_param("si", $slug, $product_id);
+                    $update_stmt->execute();
+                    
+                    // Commit transaction
+                    $conn->commit();
+                    
+                    $_SESSION['success'] = "Product added successfully.";
+                    header("Location: products.php");
+                    exit;
+                } else {
+                    // Rollback transaction if error occurs
+                    $conn->rollback();
+                    $errors['general'] = "Failed to add product: " . $conn->error;
+                    
+                    // Delete uploaded image if database insert fails
+                    if (!empty($image_url)) {
+                        $image_path = getUploadPath($upload_dir . $image_url);
+                        if (file_exists($image_path)) {
+                            unlink($image_path);
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                $conn->rollback();
+                $errors['general'] = "An error occurred: " . $e->getMessage();
             }
             
             $conn->close();
