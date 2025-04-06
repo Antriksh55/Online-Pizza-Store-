@@ -26,7 +26,10 @@
     $categories = ['pizza', 'sides', 'drinks', 'desserts'];
     
     // Get product details
-    $sql = "SELECT * FROM products WHERE id = ?";
+    $sql = "SELECT p.*, c.name as category_name 
+            FROM products p 
+            LEFT JOIN categories c ON p.category_id = c.id 
+            WHERE p.id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("i", $product_id);
     $stmt->execute();
@@ -45,6 +48,14 @@
     $category = $product['category'];
     $image_url = $product['image_url'];
     $is_available = $product['is_available'];
+    
+    // Get categories for the dropdown
+    $sql = "SELECT id, name FROM categories ORDER BY name";
+    $result = $conn->query($sql);
+    $categories = [];
+    while ($row = $result->fetch_assoc()) {
+        $categories[] = $row;
+    }
     
     // Handle form submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -260,8 +271,8 @@
                                             class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
                                             <option value="">Select Category</option>
                                             <?php foreach ($categories as $cat): ?>
-                                                <option value="<?php echo $cat; ?>" <?php if($category === $cat) echo 'selected'; ?>>
-                                                    <?php echo ucfirst($cat); ?>
+                                                <option value="<?php echo $cat['id']; ?>" <?php if($category === $cat['id']) echo 'selected'; ?>>
+                                                    <?php echo ucfirst($cat['name']); ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>

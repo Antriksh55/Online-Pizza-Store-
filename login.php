@@ -1,26 +1,28 @@
 <?php
-    $pageTitle = "Login";
-    require_once 'includes/functions.php';
+session_start();
+$pageTitle = "Login";
+require_once 'includes/functions.php';
+
+// Redirect if already logged in
+if (isLoggedIn()) {
+    header("Location: index.php");
+    exit();
+}
+
+$redirect = isset($_GET['redirect']) ? $_GET['redirect'] : '';
+$email = '';
+$error = '';
+
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email']);
+    $password = $_POST['password'];
     
-    // Redirect if already logged in
-    if (isLoggedIn()) {
-        header("Location: index.php");
-        exit();
-    }
-    
-    $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : '';
-    $email = $password = '';
-    $error = '';
-    
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $email = trim($_POST['email']);
-        $password = $_POST['password'];
-        
-        // Validate form inputs
-        if (empty($email) || empty($password)) {
-            $error = "All fields are required";
-        } else {
+    // Validate form inputs
+    if (empty($email) || empty($password)) {
+        $error = "All fields are required";
+    } else {
+        try {
             // Check user credentials
             $conn = connectDB();
             
@@ -54,10 +56,14 @@
             }
             
             $conn->close();
+        } catch (Exception $e) {
+            $error = "An error occurred during login. Please try again later.";
+            error_log("Login error: " . $e->getMessage());
         }
     }
-    
-    require_once 'layouts/header.php';
+}
+
+include 'includes/header.php';
 ?>
 
 <div class="flex justify-center">
@@ -94,4 +100,4 @@
     </div>
 </div>
 
-<?php require_once 'layouts/footer.php'; ?> 
+<?php include 'includes/footer.php'; ?> 

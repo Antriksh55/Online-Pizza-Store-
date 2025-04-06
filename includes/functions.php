@@ -636,4 +636,32 @@ function updateCart($cart_id, $quantity) {
         return ['status' => 'error', 'message' => 'Failed to update cart'];
     }
 }
+
+/**
+ * Get all items in the user's cart
+ * 
+ * @return array List of cart items with product details
+ */
+function getCartItems() {
+    if (!isLoggedIn()) {
+        return [];
+    }
+    
+    $conn = connectDB();
+    $user_id = $_SESSION['user_id'];
+    
+    $sql = "SELECT c.id as cart_id, c.quantity, p.*, c.quantity * p.price as subtotal 
+            FROM cart c 
+            JOIN products p ON c.product_id = p.id 
+            WHERE c.user_id = ? 
+            ORDER BY c.id DESC";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $items = $result->fetch_all(MYSQLI_ASSOC);
+    
+    $conn->close();
+    return $items;
+}
 ?> 

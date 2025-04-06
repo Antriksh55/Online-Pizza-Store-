@@ -1,146 +1,145 @@
 <?php
-    $pageTitle = "Add Product";
-    require_once '../includes/functions.php';
+session_start();
+$pageTitle = "Add Product";
+require_once '../includes/functions.php';
+
+// Require admin login
+requireAdmin();
+
+$name = $description = $price = '';
+$category_id = 0;
+$error = '';
+$success = '';
+
+// Get categories for the dropdown
+$conn = connectDB();
+$sql = "SELECT id, name FROM categories ORDER BY name";
+$result = $conn->query($sql);
+$categories = [];
+while ($row = $result->fetch_assoc()) {
+    $categories[] = $row;
+}
+
+// Add a new category if requested
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
+    $category_name = trim($_POST['new_category']);
     
-    // Require admin login
-    requireAdmin();
-    
-    // Initialize variables
-    $name = '';
-    $description = '';
-    $price = '';
-    $category = '';
-    $is_available = 1;
-    $errors = [];
-    $categories = ['pizza', 'sides', 'drinks', 'desserts'];
-    $success = false;
-    
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        // Get and validate form data
-        $name = trim($_POST['name']);
-        $description = trim($_POST['description']);
-        $price = trim($_POST['price']);
-        $category = $_POST['category'];
-        $is_available = isset($_POST['is_available']) ? 1 : 0;
+    if (empty($category_name)) {
+        $error = "Category name cannot be empty";
+    } else {
+        $sql = "INSERT INTO categories (name) VALUES (?)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $category_name);
         
-        // Validate required fields
-        if (empty($name)) {
-            $errors['name'] = 'Product name is required';
-        } elseif (strlen($name) > 100) {
-            $errors['name'] = 'Product name cannot exceed 100 characters';
-        }
-        
-        if (empty($description)) {
-            $errors['description'] = 'Product description is required';
-        }
-        
-        if (empty($price)) {
-            $errors['price'] = 'Product price is required';
-        } elseif (!is_numeric($price) || $price <= 0) {
-            $errors['price'] = 'Price must be a positive number';
-        }
-        
-        if (empty($category)) {
-            $errors['category'] = 'Category is required';
-        } elseif (!in_array($category, $categories)) {
-            $errors['category'] = 'Invalid category selected';
-        }
-        
-        // Handle image upload
-        $image_url = '';
-        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-            $file_tmp = $_FILES['image']['tmp_name'];
-            $file_name = $_FILES['image']['name'];
-            $file_size = $_FILES['image']['size'];
-            $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+        if ($stmt->execute()) {
+            $success = "Category added successfully";
             
-            // Check file extension
-            $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-            
-            if (!in_array($file_ext, $allowed_exts)) {
-                $errors['image'] = 'Only JPG, JPEG, PNG, GIF, and WEBP files are allowed';
-            } elseif ($file_size > 2097152) { // 2MB limit
-                $errors['image'] = 'Image file size must be under 2MB';
-            } else {
-                // Generate unique filename
-                $new_file_name = uniqid('product_') . '.' . $file_ext;
-                $upload_dir = '../uploads/products/';
-                
-                // Use proper path handling function
-                $upload_path = getUploadPath($upload_dir . $new_file_name);
-                
-                // Move file to upload directory
-                if (move_uploaded_file($file_tmp, $upload_path)) {
-                    $image_url = $new_file_name;
-                } else {
-                    $errors['image'] = 'Failed to upload image. Make sure the uploads directory is writable.';
-                }
+            // Refresh categories
+            $sql = "SELECT id, name FROM categories ORDER BY name";
+            $result = $conn->query($sql);
+            $categories = [];
+            while ($row = $result->fetch_assoc()) {
+                $categories[] = $row;
             }
+            
+            // Set the newly added category as selected
+            $category_id = $conn->insert_id;
         } else {
-            // Image is required
-            if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                if ($_FILES['image']['error'] === UPLOAD_ERR_NO_FILE) {
-                    $errors['image'] = 'Product image is required';
-                } elseif ($_FILES['image']['error'] === UPLOAD_ERR_INI_SIZE || 
-                          $_FILES['image']['error'] === UPLOAD_ERR_FORM_SIZE) {
-                    $errors['image'] = 'Image file size exceeds the maximum limit';
-                } else {
-                    $errors['image'] = 'Image upload failed: ' . $_FILES['image']['error'];
-                }
+            $error = "Failed to add category: " . $conn->error;
+        }
+    }
+}
+
+// Handle form submission for product
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['add_category'])) {
+    $name = trim($_POST['name']);
+    $description = trim($_POST['description']);
+    $price = trim($_POST['price']);
+    $category_id = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+    $active = isset($_POST['active']) ? 1 : 0;
+    
+    // Validate form inputs
+    if (empty($name) || empty($description) || empty($price)) {
+        $error = "All fields are required";
+    } elseif (!is_numeric($price) || $price <= 0) {
+        $error = "Price must be a positive number";
+    } elseif ($category_id <= 0) {
+        $error = "Please select a category";
+    } else {
+        // Handle image upload
+        $image_name = '';
+        $upload_success = true;
+        
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $upload_dir = getUploadPath('uploads/');
+            
+            // Generate unique image name
+            $image_extension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+            $image_name = uniqid('product_') . '.' . $image_extension;
+            $target_file = $upload_dir . $image_name;
+            
+            // Check file type
+            $allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
+            if (!in_array(strtolower($image_extension), $allowed_types)) {
+                $error = "Only JPG, JPEG, PNG & GIF files are allowed";
+                $upload_success = false;
+            } 
+            // Check file size (max 5MB)
+            elseif ($_FILES['image']['size'] > 5000000) {
+                $error = "File is too large (max 5MB)";
+                $upload_success = false;
+            } 
+            // Upload file
+            elseif (!move_uploaded_file($_FILES['image']['tmp_name'], $target_file)) {
+                $error = "Failed to upload image";
+                $upload_success = false;
             }
         }
         
-        // If no errors, insert product into database
-        if (empty($errors)) {
-            $conn = connectDB();
-            
+        if ($upload_success) {
             try {
-                // Begin transaction for data integrity
+                // Start transaction
                 $conn->begin_transaction();
                 
-                $sql = "INSERT INTO products (name, description, price, category, image_url, is_available) 
+                // Insert product
+                $sql = "INSERT INTO products (name, description, price, category_id, image, active) 
                         VALUES (?, ?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
-                $stmt->bind_param("ssdssi", $name, $description, $price, $category, $image_url, $is_available);
+                $stmt->bind_param("ssdiis", $name, $description, $price, $category_id, $image_name, $active);
                 
                 if ($stmt->execute()) {
-                    $product_id = $conn->insert_id;
-                    
-                    // Create SEO-friendly slug (optional feature)
-                    $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $name)) . '-' . $product_id;
-                    $update_sql = "UPDATE products SET slug = ? WHERE id = ?";
-                    $update_stmt = $conn->prepare($update_sql);
-                    $update_stmt->bind_param("si", $slug, $product_id);
-                    $update_stmt->execute();
-                    
                     // Commit transaction
                     $conn->commit();
                     
-                    $_SESSION['success'] = "Product added successfully.";
+                    // Redirect to product list
+                    $_SESSION['success'] = "Product added successfully";
                     header("Location: products.php");
-                    exit;
+                    exit();
                 } else {
-                    // Rollback transaction if error occurs
+                    // Rollback transaction
                     $conn->rollback();
-                    $errors['general'] = "Failed to add product: " . $conn->error;
+                    $error = "Failed to add product: " . $stmt->error;
                     
-                    // Delete uploaded image if database insert fails
-                    if (!empty($image_url)) {
-                        $image_path = getUploadPath($upload_dir . $image_url);
-                        if (file_exists($image_path)) {
-                            unlink($image_path);
-                        }
+                    // Delete uploaded image if product insertion failed
+                    if (!empty($image_name)) {
+                        @unlink($upload_dir . $image_name);
                     }
                 }
             } catch (Exception $e) {
+                // Rollback transaction
                 $conn->rollback();
-                $errors['general'] = "An error occurred: " . $e->getMessage();
+                $error = "An error occurred: " . $e->getMessage();
+                
+                // Delete uploaded image if an exception occurred
+                if (!empty($image_name)) {
+                    @unlink($upload_dir . $image_name);
+                }
             }
-            
-            $conn->close();
         }
     }
+}
+
+$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -207,117 +206,94 @@
             <header class="bg-white shadow">
                 <div class="py-4 px-6 flex justify-between items-center">
                     <h2 class="text-xl font-semibold text-gray-800">Add New Product</h2>
-                    <a href="products.php" class="text-indigo-600 hover:text-indigo-900">
+                    <a href="products.php" class="flex items-center text-gray-600 hover:text-gray-900">
                         <i class="fas fa-arrow-left mr-1"></i> Back to Products
                     </a>
                 </div>
             </header>
             
             <main class="p-6">
-                <?php if (isset($errors['general'])): ?>
-                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                        <?php echo $errors['general']; ?>
+                <?php if (!empty($error)): ?>
+                    <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+                        <p><?php echo $error; ?></p>
+                    </div>
+                <?php endif; ?>
+                
+                <?php if (!empty($success)): ?>
+                    <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6" role="alert">
+                        <p><?php echo $success; ?></p>
                     </div>
                 <?php endif; ?>
                 
                 <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-                        <h3 class="text-lg font-semibold">Product Information</h3>
-                    </div>
-                    
                     <div class="p-6">
                         <form action="add_product.php" method="post" enctype="multipart/form-data">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <div class="mb-4">
-                                        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">
-                                            Product Name <span class="text-red-500">*</span>
-                                        </label>
-                                        <input type="text" id="name" name="name" value="<?php echo htmlspecialchars($name); ?>" required
-                                            class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                                        <?php if (isset($errors['name'])): ?>
-                                            <p class="mt-1 text-sm text-red-600"><?php echo $errors['name']; ?></p>
-                                        <?php endif; ?>
-                                    </div>
-                                    
-                                    <div class="mb-4">
-                                        <label for="category" class="block text-sm font-medium text-gray-700 mb-1">
-                                            Category <span class="text-red-500">*</span>
-                                        </label>
-                                        <select id="category" name="category" required
-                                            class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                                    <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                                    <input type="text" id="name" name="name" value="<?php echo htmlspecialchars($name); ?>" required 
+                                        class="w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="price" class="block text-sm font-medium text-gray-700 mb-1">Price (₹)</label>
+                                    <input type="number" id="price" name="price" value="<?php echo htmlspecialchars($price); ?>" required min="0" step="0.01" 
+                                        class="w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="category_id" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                                    <div class="flex">
+                                        <select id="category_id" name="category_id" required class="w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
                                             <option value="">Select Category</option>
-                                            <?php foreach ($categories as $cat): ?>
-                                                <option value="<?php echo $cat; ?>" <?php if($category === $cat) echo 'selected'; ?>>
-                                                    <?php echo ucfirst($cat); ?>
+                                            <?php foreach ($categories as $category): ?>
+                                                <option value="<?php echo $category['id']; ?>" <?php echo $category_id == $category['id'] ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($category['name']); ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
-                                        <?php if (isset($errors['category'])): ?>
-                                            <p class="mt-1 text-sm text-red-600"><?php echo $errors['category']; ?></p>
-                                        <?php endif; ?>
-                                    </div>
-                                    
-                                    <div class="mb-4">
-                                        <label for="price" class="block text-sm font-medium text-gray-700 mb-1">
-                                            Price (₹) <span class="text-red-500">*</span>
-                                        </label>
-                                        <input type="number" id="price" name="price" step="0.01" min="0" value="<?php echo htmlspecialchars($price); ?>" required
-                                            class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                                        <?php if (isset($errors['price'])): ?>
-                                            <p class="mt-1 text-sm text-red-600"><?php echo $errors['price']; ?></p>
-                                        <?php endif; ?>
-                                    </div>
-                                    
-                                    <div class="mb-4">
-                                        <label for="image" class="block text-sm font-medium text-gray-700 mb-1">
-                                            Product Image <span class="text-red-500">*</span>
-                                        </label>
-                                        <input type="file" id="image" name="image" accept="image/*" required
-                                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
-                                        <p class="mt-1 text-sm text-gray-500">JPG, PNG or GIF. Max 2MB.</p>
-                                        <?php if (isset($errors['image'])): ?>
-                                            <p class="mt-1 text-sm text-red-600"><?php echo $errors['image']; ?></p>
-                                        <?php endif; ?>
+                                        <button type="button" id="newCategoryBtn" class="ml-2 inline-flex items-center p-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium bg-white hover:bg-gray-50">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
                                     </div>
                                 </div>
                                 
                                 <div>
-                                    <div class="mb-4">
-                                        <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
-                                            Description <span class="text-red-500">*</span>
-                                        </label>
-                                        <textarea id="description" name="description" rows="5" required
-                                            class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"><?php echo htmlspecialchars($description); ?></textarea>
-                                        <?php if (isset($errors['description'])): ?>
-                                            <p class="mt-1 text-sm text-red-600"><?php echo $errors['description']; ?></p>
-                                        <?php endif; ?>
+                                    <label for="image" class="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
+                                    <input type="file" id="image" name="image" accept="image/*" 
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none">
+                                    <div class="mt-1 text-xs text-gray-500">
+                                        Recommended size: 500x500px. Max file size: 5MB.
                                     </div>
-                                    
-                                    <div class="mb-4">
-                                        <div class="flex items-center">
-                                            <input type="checkbox" id="is_available" name="is_available" <?php if($is_available) echo 'checked'; ?>
-                                                class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                                            <label for="is_available" class="ml-2 block text-sm text-gray-900">
-                                                Product is available for purchase
-                                            </label>
-                                        </div>
-                                    </div>
-                                    
-                                    <div id="image-preview" class="mt-4 hidden">
-                                        <p class="text-sm font-medium text-gray-700 mb-2">Image Preview</p>
-                                        <img id="preview-img" src="#" alt="Preview" class="rounded-lg max-h-48 object-contain border">
+                                    <div class="mt-2">
+                                        <img id="image-preview" src="#" alt="Image Preview" class="hidden max-h-32 rounded-md">
                                     </div>
                                 </div>
-                            </div>
-                            
-                            <div class="mt-6 flex justify-end border-t border-gray-200 pt-6">
-                                <a href="products.php" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">
-                                    Cancel
-                                </a>
-                                <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700">
-                                    <i class="fas fa-save mr-1"></i> Save Product
-                                </button>
+                                
+                                <div class="md:col-span-2">
+                                    <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                    <textarea id="description" name="description" rows="4" required 
+                                        class="w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"><?php echo htmlspecialchars($description); ?></textarea>
+                                </div>
+                                
+                                <div class="md:col-span-2">
+                                    <div class="flex items-center">
+                                        <input type="checkbox" id="active" name="active" value="1" checked 
+                                            class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                        <label for="active" class="ml-2 block text-sm text-gray-700">
+                                            Active (available for purchase)
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="md:col-span-2">
+                                    <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                        <i class="fas fa-save mr-2"></i> Save Product
+                                    </button>
+                                    <a href="products.php" class="ml-2 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                        Cancel
+                                    </a>
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -326,23 +302,64 @@
         </div>
     </div>
     
+    <!-- New Category Modal -->
+    <div id="newCategoryModal" class="fixed z-10 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true">
+                <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
+            </div>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <form action="add_product.php" method="post">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div class="sm:flex sm:items-start">
+                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                <h3 class="text-lg leading-6 font-medium text-gray-900">Add New Category</h3>
+                                <div class="mt-2">
+                                    <input type="text" name="new_category" required placeholder="Category Name" 
+                                        class="w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button type="submit" name="add_category" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">
+                            Add Category
+                        </button>
+                        <button type="button" id="cancelCategoryBtn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
     <script>
-        // Image preview functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const imageInput = document.getElementById('image');
-            if (imageInput) {
-                imageInput.addEventListener('change', function(e) {
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            document.getElementById('preview-img').src = e.target.result;
-                            document.getElementById('image-preview').classList.remove('hidden');
-                        }
-                        reader.readAsDataURL(file);
-                    }
-                });
+        // Image preview
+        document.getElementById('image').addEventListener('change', function(e) {
+            const preview = document.getElementById('image-preview');
+            const file = e.target.files[0];
+            
+            if (file) {
+                preview.src = URL.createObjectURL(file);
+                preview.classList.remove('hidden');
+            } else {
+                preview.src = '#';
+                preview.classList.add('hidden');
             }
+        });
+        
+        // New category modal
+        const modal = document.getElementById('newCategoryModal');
+        const newCategoryBtn = document.getElementById('newCategoryBtn');
+        const cancelCategoryBtn = document.getElementById('cancelCategoryBtn');
+        
+        newCategoryBtn.addEventListener('click', function() {
+            modal.classList.remove('hidden');
+        });
+        
+        cancelCategoryBtn.addEventListener('click', function() {
+            modal.classList.add('hidden');
         });
     </script>
 </body>

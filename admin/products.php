@@ -12,66 +12,75 @@
     
     // Search filter
     $search = isset($_GET['search']) ? trim($_GET['search']) : '';
-    $category = isset($_GET['category']) ? trim($_GET['category']) : '';
+    $category_id = isset($_GET['category_id']) ? (int)$_GET['category_id'] : 0;
     
     // Get products with pagination and filters
     $conn = connectDB();
     
+    // Get categories for filter
+    $categories_sql = "SELECT id, name FROM categories ORDER BY name";
+    $categories_result = $conn->query($categories_sql);
+    $categories = [];
+    
+    while ($row = $categories_result->fetch_assoc()) {
+        $categories[] = $row;
+    }
+    
     // Count total records for pagination
-    $count_sql = "SELECT COUNT(*) as total FROM products";
+    $count_sql = "SELECT COUNT(*) as total FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1";
     $where_clauses = [];
+    $params = [];
+    $types = "";
     
     if (!empty($search)) {
         $search_term = '%' . $conn->real_escape_string($search) . '%';
-        $where_clauses[] = "(name LIKE ? OR description LIKE ?)";
+        $where_clauses[] = "(p.name LIKE ? OR p.description LIKE ?)";
+        $params[] = $search_term;
+        $params[] = $search_term;
+        $types .= "ss";
     }
     
-    if (!empty($category)) {
-        $where_clauses[] = "category = ?";
+    if ($category_id > 0) {
+        $where_clauses[] = "p.category_id = ?";
+        $params[] = $category_id;
+        $types .= "i";
     }
     
     if (!empty($where_clauses)) {
-        $count_sql .= " WHERE " . implode(" AND ", $where_clauses);
+        $count_sql .= " AND " . implode(" AND ", $where_clauses);
     }
     
-    if (!empty($search) && !empty($category)) {
+    if (!empty($params)) {
         $count_stmt = $conn->prepare($count_sql);
-        $count_stmt->bind_param("sss", $search_term, $search_term, $category);
-    } elseif (!empty($search)) {
-        $count_stmt = $conn->prepare($count_sql);
-        $count_stmt->bind_param("ss", $search_term, $search_term);
-    } elseif (!empty($category)) {
-        $count_stmt = $conn->prepare($count_sql);
-        $count_stmt->bind_param("s", $category);
-    } else {
-        $count_result = $conn->query($count_sql);
-    }
-    
-    if (isset($count_stmt)) {
+        $count_stmt->bind_param($types, ...$params);
         $count_stmt->execute();
         $count_result = $count_stmt->get_result();
+    } else {
+        $count_result = $conn->query($count_sql);
     }
     
     $total_records = $count_result->fetch_assoc()['total'];
     $total_pages = ceil($total_records / $records_per_page);
     
     // Get product data with pagination
-    $sql = "SELECT * FROM products";
+    $sql = "SELECT p.*, c.name as category_name 
+            FROM products p 
+            LEFT JOIN categories c ON p.category_id = c.id 
+            WHERE 1=1";
     
     if (!empty($where_clauses)) {
-        $sql .= " WHERE " . implode(" AND ", $where_clauses);
+        $sql .= " AND " . implode(" AND ", $where_clauses);
     }
     
-    $sql .= " ORDER BY category, name LIMIT ?, ?";
+    $sql .= " ORDER BY p.name LIMIT ?, ?";
     
     $stmt = $conn->prepare($sql);
     
-    if (!empty($search) && !empty($category)) {
-        $stmt->bind_param("sssii", $search_term, $search_term, $category, $start_from, $records_per_page);
-    } elseif (!empty($search)) {
-        $stmt->bind_param("ssii", $search_term, $search_term, $start_from, $records_per_page);
-    } elseif (!empty($category)) {
-        $stmt->bind_param("sii", $category, $start_from, $records_per_page);
+    if (!empty($params)) {
+        $params[] = $start_from;
+        $params[] = $records_per_page;
+        $types .= "ii";
+        $stmt->bind_param($types, ...$params);
     } else {
         $stmt->bind_param("ii", $start_from, $records_per_page);
     }
@@ -84,21 +93,12 @@
         $products[] = $row;
     }
     
-    // Get categories for filter
-    $category_sql = "SELECT DISTINCT category FROM products ORDER BY category";
-    $category_result = $conn->query($category_sql);
-    $categories = [];
-    
-    while ($row = $category_result->fetch_assoc()) {
-        $categories[] = $row['category'];
-    }
-    
     // Handle product deletion if requested
     if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
         $product_id = (int) $_GET['delete'];
         
         // Get product info for file deletion
-        $sql = "SELECT image_url FROM products WHERE id = ?";
+        $sql = "SELECT image FROM products WHERE id = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $product_id);
         $stmt->execute();
@@ -111,8 +111,8 @@
         
         if ($stmt->execute() && $stmt->affected_rows > 0) {
             // Delete product image if exists
-            if ($product && !empty($product['image_url'])) {
-                $image_path = "../uploads/products/" . $product['image_url'];
+            if ($product && !empty($product['image'])) {
+                $image_path = getUploadPath("uploads/" . $product['image']);
                 if (file_exists($image_path)) {
                     unlink($image_path);
                 }
@@ -203,42 +203,36 @@
             
             <main class="p-6">
                 <?php if (isset($_SESSION['success'])): ?>
-                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-                        <?php 
-                            echo $_SESSION['success']; 
-                            unset($_SESSION['success']);
-                        ?>
+                    <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6" role="alert">
+                        <p><?php echo $_SESSION['success']; ?></p>
                     </div>
+                    <?php unset($_SESSION['success']); ?>
                 <?php endif; ?>
                 
                 <?php if (isset($_SESSION['error'])): ?>
-                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                        <?php 
-                            echo $_SESSION['error']; 
-                            unset($_SESSION['error']);
-                        ?>
+                    <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+                        <p><?php echo $_SESSION['error']; ?></p>
                     </div>
+                    <?php unset($_SESSION['error']); ?>
                 <?php endif; ?>
                 
-                <!-- Filters -->
-                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-                    <h3 class="text-lg font-semibold mb-4">Filter Products</h3>
-                    
-                    <form action="products.php" method="get" class="flex flex-wrap gap-4">
-                        <div class="w-full sm:w-auto flex-1">
-                            <label for="search" class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                <!-- Search and Filter -->
+                <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+                    <form action="products.php" method="GET" class="flex flex-col md:flex-row gap-4">
+                        <div class="flex-1">
+                            <label for="search" class="block text-sm font-medium text-gray-700 mb-1">Search Products</label>
                             <input type="text" id="search" name="search" value="<?php echo htmlspecialchars($search); ?>" 
-                                placeholder="Search by name or description" 
-                                class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                                placeholder="Search by name or description..."
+                                class="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                         
-                        <div class="w-full sm:w-auto">
-                            <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                            <select id="category" name="category" class="block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
+                        <div class="md:w-64">
+                            <label for="category_id" class="block text-sm font-medium text-gray-700 mb-1">Filter by Category</label>
+                            <select id="category_id" name="category_id" class="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 <option value="">All Categories</option>
-                                <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo $cat; ?>" <?php if($category === $cat) echo 'selected'; ?>>
-                                        <?php echo ucfirst($cat); ?>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?php echo $category['id']; ?>" <?php echo $category_id == $category['id'] ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($category['name']); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -246,158 +240,154 @@
                         
                         <div class="flex items-end">
                             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
-                                <i class="fas fa-filter mr-1"></i> Apply Filters
+                                <i class="fas fa-search mr-1"></i> Search
                             </button>
                         </div>
-                        
-                        <?php if (!empty($search) || !empty($category)): ?>
-                            <div class="flex items-end">
-                                <a href="products.php" class="text-gray-600 border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-100">
-                                    <i class="fas fa-times mr-1"></i> Clear Filters
-                                </a>
-                            </div>
-                        <?php endif; ?>
                     </form>
                 </div>
                 
                 <!-- Products Table -->
                 <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h3 class="text-lg font-semibold">Product List</h3>
-                    </div>
-                    
-                    <?php if (empty($products)): ?>
-                        <div class="p-6 text-center text-gray-500">
-                            <i class="fas fa-box-open text-gray-300 text-5xl mb-3"></i>
-                            <?php if (!empty($search) || !empty($category)): ?>
-                                <p>No products found matching your search criteria.</p>
-                            <?php else: ?>
-                                <p>No products found. Start adding products to your store.</p>
-                            <?php endif; ?>
-                        </div>
-                    <?php else: ?>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <?php if (empty($products)): ?>
                                     <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">No products found</td>
                                     </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <?php else: ?>
                                     <?php foreach ($products as $product): ?>
                                         <tr>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <?php if (!empty($product['image_url'])): ?>
-                                                    <img src="<?php echo getUploadUrl('../uploads/products/' . $product['image_url']); ?>" 
-                                                        alt="<?php echo htmlspecialchars($product['name']); ?>" 
-                                                        class="h-12 w-12 rounded-full object-cover">
-                                                <?php else: ?>
-                                                    <div class="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center">
-                                                        <i class="fas fa-image text-gray-400"></i>
+                                                <div class="flex items-center">
+                                                    <div class="flex-shrink-0 h-10 w-10">
+                                                        <?php 
+                                                        $image_path = !empty($product['image']) ? '../uploads/' . $product['image'] : '../assets/images/default-product.jpg';
+                                                        ?>
+                                                        <img class="h-10 w-10 object-cover rounded-full" src="<?php echo $image_path; ?>" alt="<?php echo htmlspecialchars($product['name']); ?>">
                                                     </div>
-                                                <?php endif; ?>
+                                                    <div class="ml-4">
+                                                        <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($product['name']); ?></div>
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="font-medium text-gray-900">
-                                                    <a href="view_product.php?id=<?php echo $product['id']; ?>" class="hover:text-indigo-600">
-                                                        <?php echo htmlspecialchars($product['name']); ?>
-                                                    </a>
-                                                </div>
-                                                <div class="text-sm text-gray-500"><?php echo strlen($product['description']) > 50 ? substr(htmlspecialchars($product['description']), 0, 47) . '...' : htmlspecialchars($product['description']); ?></div>
+                                                <div class="text-sm text-gray-900"><?php echo htmlspecialchars($product['category_name'] ?? 'Uncategorized'); ?></div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?php echo ucfirst($product['category']); ?>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="text-sm text-gray-900"><?php echo formatPrice($product['price']); ?></div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                <?php echo formatPrice($product['price']); ?>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                                <?php if ($product['is_available']): ?>
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                        Available
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <?php if ($product['active'] == 1): ?>
+                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                                        Active
                                                     </span>
                                                 <?php else: ?>
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                        Unavailable
+                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                                        Inactive
                                                     </span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <div class="flex gap-3">
-                                                    <a href="edit_product.php?id=<?php echo $product['id']; ?>" class="text-indigo-600 hover:text-indigo-900">
-                                                        <i class="fas fa-edit"></i> Edit
-                                                    </a>
-                                                    <a href="delete_product.php?id=<?php echo $product['id']; ?>" onclick="return confirm('Are you sure you want to delete the product?');" class="text-red-600 hover:text-red-900">
-                                                        <i class="fas fa-trash"></i> Delete
-                                                    </a>
-                                                </div>
+                                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <a href="view_product.php?id=<?php echo $product['id']; ?>" class="text-blue-600 hover:text-blue-900 mr-3">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                <a href="edit_product.php?id=<?php echo $product['id']; ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <a href="#" onclick="confirmDelete(<?php echo $product['id']; ?>)" class="text-red-600 hover:text-red-900">
+                                                    <i class="fas fa-trash"></i>
+                                                </a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        
-                        <!-- Pagination -->
-                        <?php if ($total_pages > 1): ?>
-                            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                                <div class="flex justify-between items-center">
-                                    <div class="text-sm text-gray-700">
-                                        Showing <span class="font-medium"><?php echo $start_from + 1; ?></span> to 
-                                        <span class="font-medium"><?php echo min($start_from + $records_per_page, $total_records); ?></span> of 
-                                        <span class="font-medium"><?php echo $total_records; ?></span> products
-                                    </div>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <?php if ($total_pages > 1): ?>
+                        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                            <div class="flex justify-between items-center">
+                                <div class="text-sm text-gray-700">
+                                    Showing <span class="font-medium"><?php echo min(($page - 1) * $records_per_page + 1, $total_records); ?></span> 
+                                    to <span class="font-medium"><?php echo min($page * $records_per_page, $total_records); ?></span> 
+                                    of <span class="font-medium"><?php echo $total_records; ?></span> results
+                                </div>
+                                <div class="flex space-x-2">
+                                    <?php if ($page > 1): ?>
+                                        <a href="?page=<?php echo $page - 1; ?><?php echo !empty($search) ? '&search=' . urlencode($search) : ''; ?><?php echo $category_id ? '&category_id=' . $category_id : ''; ?>" 
+                                            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md bg-white hover:bg-gray-50">
+                                            Previous
+                                        </a>
+                                    <?php endif; ?>
                                     
-                                    <div class="flex space-x-1">
-                                        <?php
-                                        $queries = $_GET;
-                                        
-                                        // Previous page
-                                        if ($page > 1) {
-                                            $queries['page'] = $page - 1;
-                                            $prev_link = 'products.php?' . http_build_query($queries);
-                                            echo '<a href="' . $prev_link . '" class="px-3 py-1 rounded-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50">Previous</a>';
-                                        }
-                                        
-                                        // Page numbers
-                                        $start_page = max(1, $page - 2);
-                                        $end_page = min($total_pages, $page + 2);
-                                        
-                                        for ($i = $start_page; $i <= $end_page; $i++) {
-                                            $queries['page'] = $i;
-                                            $page_link = 'products.php?' . http_build_query($queries);
-                                            
-                                            if ($i == $page) {
-                                                echo '<a href="' . $page_link . '" class="px-3 py-1 rounded-md bg-indigo-600 text-white">' . $i . '</a>';
-                                            } else {
-                                                echo '<a href="' . $page_link . '" class="px-3 py-1 rounded-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50">' . $i . '</a>';
-                                            }
-                                        }
-                                        
-                                        // Next page
-                                        if ($page < $total_pages) {
-                                            $queries['page'] = $page + 1;
-                                            $next_link = 'products.php?' . http_build_query($queries);
-                                            echo '<a href="' . $next_link . '" class="px-3 py-1 rounded-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50">Next</a>';
-                                        }
-                                        ?>
-                                    </div>
+                                    <?php if ($page < $total_pages): ?>
+                                        <a href="?page=<?php echo $page + 1; ?><?php echo !empty($search) ? '&search=' . urlencode($search) : ''; ?><?php echo $category_id ? '&category_id=' . $category_id : ''; ?>" 
+                                            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md bg-white hover:bg-gray-50">
+                                            Next
+                                        </a>
+                                    <?php endif; ?>
                                 </div>
                             </div>
-                        <?php endif; ?>
+                        </div>
                     <?php endif; ?>
                 </div>
             </main>
         </div>
     </div>
     
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed z-10 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true">
+                <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
+            </div>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                            <i class="fas fa-exclamation-triangle text-red-600"></i>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">Delete Product</h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-gray-500">Are you sure you want to delete this product? This action cannot be undone.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <a id="confirmDeleteBtn" href="#" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">
+                        Delete
+                    </a>
+                    <button type="button" onclick="closeModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <script>
-        // Function removed as we now use delete_product.php directly
+        function confirmDelete(id) {
+            document.getElementById('deleteModal').classList.remove('hidden');
+            document.getElementById('confirmDeleteBtn').href = 'products.php?delete=' + id;
+        }
+        
+        function closeModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+        }
     </script>
 </body>
 </html> 
