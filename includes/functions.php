@@ -537,4 +537,103 @@ function getOrderStatusClass($status) {
             return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800';
     }
 }
+
+/**
+ * Toggle a product in user's wishlist (add if not present, remove if present)
+ * 
+ * @param int $product_id The product ID to toggle
+ * @return array Status and message about the operation
+ */
+function toggleWishlist($product_id) {
+    if (!isLoggedIn()) {
+        return ['status' => 'error', 'message' => 'You must be logged in to manage your wishlist'];
+    }
+    
+    $conn = connectDB();
+    $user_id = $_SESSION['user_id'];
+    $response = [];
+    
+    // Check if product already in wishlist
+    $sql = "SELECT id FROM wishlist WHERE user_id = ? AND product_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $user_id, $product_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    // If already in wishlist, remove it
+    if ($result->num_rows > 0) {
+        $wishlist_item = $result->fetch_assoc();
+        $sql = "DELETE FROM wishlist WHERE id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $wishlist_item['id']);
+        
+        if ($stmt->execute()) {
+            $response = ['status' => 'success', 'message' => 'Product removed from wishlist', 'action' => 'removed'];
+        } else {
+            $response = ['status' => 'error', 'message' => 'Failed to remove product from wishlist'];
+        }
+    } else {
+        // Add to wishlist
+        $sql = "INSERT INTO wishlist (user_id, product_id) VALUES (?, ?)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ii", $user_id, $product_id);
+        
+        if ($stmt->execute()) {
+            $response = ['status' => 'success', 'message' => 'Product added to wishlist', 'action' => 'added'];
+        } else {
+            $response = ['status' => 'error', 'message' => 'Failed to add product to wishlist'];
+        }
+    }
+    
+    $conn->close();
+    return $response;
+}
+
+/**
+ * Update cart item quantity with proper validation
+ * 
+ * @param int $cart_id The cart item ID
+ * @param int $quantity The new quantity
+ * @return array Status and message about the operation
+ */
+function updateCart($cart_id, $quantity) {
+    if (!isLoggedIn()) {
+        return ['status' => 'error', 'message' => 'You must be logged in to manage your cart'];
+    }
+    
+    if ($quantity < 1) {
+        return ['status' => 'error', 'message' => 'Quantity must be at least 1'];
+    }
+    
+    if ($quantity > 10) {
+        return ['status' => 'error', 'message' => 'Maximum quantity per item is 10'];
+    }
+    
+    $conn = connectDB();
+    $user_id = $_SESSION['user_id'];
+    
+    // Verify cart item belongs to user
+    $sql = "SELECT id FROM cart WHERE id = ? AND user_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $cart_id, $user_id);
+    $stmt->execute();
+    
+    if ($stmt->get_result()->num_rows === 0) {
+        $conn->close();
+        return ['status' => 'error', 'message' => 'Cart item not found'];
+    }
+    
+    // Update quantity
+    $sql = "UPDATE cart SET quantity = ? WHERE id = ? AND user_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("iii", $quantity, $cart_id, $user_id);
+    
+    if ($stmt->execute()) {
+        $conn->close();
+        return ['status' => 'success', 'message' => 'Cart updated successfully'];
+    } else {
+        $conn->close();
+        return ['status' => 'error', 'message' => 'Failed to update cart'];
+    }
+}
 ?> 

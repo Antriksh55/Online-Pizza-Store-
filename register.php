@@ -1,36 +1,38 @@
 <?php
-    $pageTitle = "Register";
-    require_once 'includes/functions.php';
+session_start();
+$pageTitle = "Register";
+require_once 'includes/functions.php';
+
+// Redirect if already logged in
+if (isLoggedIn()) {
+    header("Location: index.php");
+    exit();
+}
+
+$redirect = isset($_GET['redirect']) ? $_GET['redirect'] : '';
+$name = $email = $phone = $address = '';
+$error = '';
+
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
+    $password = $_POST['password'];
+    $confirm_password = $_POST['confirm_password'];
+    $phone = trim($_POST['phone']);
+    $address = trim($_POST['address']);
     
-    // Redirect if already logged in
-    if (isLoggedIn()) {
-        header("Location: index.php");
-        exit();
-    }
-    
-    $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : '';
-    $name = $email = $phone = $address = '';
-    $error = '';
-    
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $name = trim($_POST['name']);
-        $email = trim($_POST['email']);
-        $password = $_POST['password'];
-        $confirm_password = $_POST['confirm_password'];
-        $phone = trim($_POST['phone']);
-        $address = trim($_POST['address']);
-        
-        // Validate form inputs
-        if (empty($name) || empty($email) || empty($password) || empty($confirm_password) || empty($phone) || empty($address)) {
-            $error = "All fields are required";
-        } elseif (strlen($password) < 6) {
-            $error = "Password must be at least 6 characters";
-        } elseif ($password !== $confirm_password) {
-            $error = "Passwords do not match";
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $error = "Invalid email format";
-        } else {
+    // Validate form inputs
+    if (empty($name) || empty($email) || empty($password) || empty($confirm_password) || empty($phone) || empty($address)) {
+        $error = "All fields are required";
+    } elseif (strlen($password) < 6) {
+        $error = "Password must be at least 6 characters";
+    } elseif ($password !== $confirm_password) {
+        $error = "Passwords do not match";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = "Invalid email format";
+    } else {
+        try {
             // Check if email already exists
             $conn = connectDB();
             
@@ -67,15 +69,19 @@
                     }
                     exit();
                 } else {
-                    $error = "Registration failed. Please try again.";
+                    $error = "Registration failed: " . $stmt->error;
                 }
             }
             
             $conn->close();
+        } catch (Exception $e) {
+            $error = "An error occurred during registration. Please try again later.";
+            error_log("Registration error: " . $e->getMessage());
         }
     }
-    
-    require_once 'layouts/header.php';
+}
+
+include 'includes/header.php';
 ?>
 
 <div class="flex justify-center">
@@ -137,4 +143,4 @@
     </div>
 </div>
 
-<?php require_once 'layouts/footer.php'; ?> 
+<?php include 'includes/footer.php'; ?> 

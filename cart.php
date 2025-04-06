@@ -1,206 +1,335 @@
 <?php
-    $pageTitle = "Shopping Cart";
-    require_once 'includes/functions.php';
-    
-    // Redirect if not logged in
-    if (!isLoggedIn()) {
-        header("Location: login.php?redirect=cart.php");
-        exit();
-    }
-    
-    // Get cart items
-    $conn = connectDB();
-    $user_id = $_SESSION['user_id'];
-    
-    $sql = "SELECT c.*, p.name, p.price, p.image_url 
-            FROM cart c 
-            JOIN products p ON c.product_id = p.id 
-            WHERE c.user_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    $cart_items = [];
-    $total = 0;
-    
-    if ($result->num_rows > 0) {
-        while($row = $result->fetch_assoc()) {
-            $row['subtotal'] = $row['price'] * $row['quantity'];
-            $total += $row['subtotal'];
-            $cart_items[] = $row;
-        }
-    }
-    
-    $conn->close();
-    
-    require_once 'layouts/header.php';
+session_start();
+require_once 'includes/functions.php';
+
+// Redirect if not logged in
+if (!isLoggedIn()) {
+    header('Location: login.php?redirect=cart.php');
+    exit;
+}
+
+$user_id = $_SESSION['user_id'];
+$conn = connectDB();
+
+// Get cart items
+$sql = "SELECT c.id as cart_id, c.quantity, p.*, c.quantity * p.price as subtotal 
+        FROM cart c 
+        JOIN products p ON c.product_id = p.id 
+        WHERE c.user_id = ? 
+        ORDER BY c.id DESC";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$cartItems = $result->fetch_all(MYSQLI_ASSOC);
+
+// Calculate totals
+$cartSubtotal = 0;
+$deliveryFee = 50; // Fixed delivery fee
+$taxRate = 0.05; // 5% tax rate
+
+foreach ($cartItems as $item) {
+    $cartSubtotal += $item['subtotal'];
+}
+
+$taxAmount = $cartSubtotal * $taxRate;
+$orderTotal = $cartSubtotal + $deliveryFee + $taxAmount;
+
+$conn->close();
+
+// Page title
+$pageTitle = 'My Cart - Pizza Store';
+include 'includes/header.php';
 ?>
 
-<!-- Cart Page -->
-<div class="bg-white rounded-lg shadow-md p-6 mb-8">
-    <h1 class="text-2xl font-bold mb-6">Shopping Cart</h1>
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">Shopping Cart</h1>
     
-    <?php if (!empty($cart_items)): ?>
-        <div class="overflow-x-auto">
-            <table class="w-full">
-                <thead class="bg-gray-100 text-gray-700">
-                    <tr>
-                        <th class="py-3 px-4 text-left">Product</th>
-                        <th class="py-3 px-4 text-left">Price</th>
-                        <th class="py-3 px-4 text-left">Quantity</th>
-                        <th class="py-3 px-4 text-left">Subtotal</th>
-                        <th class="py-3 px-4 text-left">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($cart_items as $item): ?>
-                        <tr class="border-b" id="cart-item-<?php echo $item['id']; ?>">
-                            <td class="py-4 px-4">
-                                <div class="flex items-center">
-                                    <img src="uploads/products/<?php echo $item['image_url']; ?>" alt="<?php echo $item['name']; ?>" class="w-16 h-16 object-cover rounded mr-4">
-                                    <span class="font-medium"><?php echo $item['name']; ?></span>
-                                </div>
-                            </td>
-                            <td class="py-4 px-4 text-gray-700">
-                                <?php echo formatPrice($item['price']); ?>
-                            </td>
-                            <td class="py-4 px-4">
-                                <div class="flex items-center">
-                                    <button onclick="updateQuantity(<?php echo $item['id']; ?>, <?php echo $item['quantity'] - 1; ?>)" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300">
-                                        <i class="fas fa-minus text-sm"></i>
-                                    </button>
-                                    <span class="mx-3" id="quantity-<?php echo $item['id']; ?>"><?php echo $item['quantity']; ?></span>
-                                    <button onclick="updateQuantity(<?php echo $item['id']; ?>, <?php echo $item['quantity'] + 1; ?>)" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300">
-                                        <i class="fas fa-plus text-sm"></i>
-                                    </button>
-                                </div>
-                            </td>
-                            <td class="py-4 px-4 text-gray-700" id="subtotal-<?php echo $item['id']; ?>">
-                                <?php echo formatPrice($item['subtotal']); ?>
-                            </td>
-                            <td class="py-4 px-4">
-                                <button onclick="removeItem(<?php echo $item['id']; ?>)" class="text-red-600 hover:text-red-800">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-        
-        <div class="mt-8 flex flex-col md:flex-row justify-between items-start">
-            <div class="mb-4 md:mb-0">
-                <a href="menu.php" class="flex items-center text-red-600 hover:text-red-800">
-                    <i class="fas fa-arrow-left mr-2"></i>
-                    Continue Shopping
-                </a>
+    <?php if (empty($cartItems)): ?>
+        <div class="bg-white rounded-lg shadow-md p-8 text-center">
+            <div class="text-5xl text-gray-300 mb-4">
+                <i class="fas fa-shopping-cart"></i>
             </div>
-            
-            <div class="bg-gray-100 p-6 rounded-lg w-full md:w-1/3">
-                <h3 class="text-lg font-semibold mb-4">Order Summary</h3>
-                
-                <div class="flex justify-between mb-2">
-                    <span class="text-gray-600">Subtotal</span>
-                    <span id="cart-total"><?php echo formatPrice($total); ?></span>
-                </div>
-                
-                <div class="flex justify-between mb-2">
-                    <span class="text-gray-600">Delivery Fee</span>
-                    <span><?php echo formatPrice(50); ?></span>
-                </div>
-                
-                <div class="border-t pt-2 mt-2">
-                    <div class="flex justify-between mb-2">
-                        <span class="font-semibold">Total</span>
-                        <span class="font-bold text-red-600" id="grand-total"><?php echo formatPrice($total + 50); ?></span>
-                    </div>
-                </div>
-                
-                <a href="checkout.php" class="block w-full bg-red-600 text-white text-center py-3 rounded-lg mt-4 hover:bg-red-700 transition">
-                    Proceed to Checkout
-                </a>
-            </div>
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Your cart is empty</h2>
+            <p class="text-gray-600 mb-6">Add some delicious items to your cart and place an order</p>
+            <a href="index.php" class="inline-block bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition duration-200">
+                Browse Products
+            </a>
         </div>
     <?php else: ?>
-        <div class="text-center py-12">
-            <i class="fas fa-shopping-cart text-gray-300 text-5xl mb-4"></i>
-            <p class="text-gray-500 text-xl mb-6">Your cart is empty</p>
-            <a href="menu.php" class="bg-red-600 text-white px-6 py-3 rounded-full hover:bg-red-700 transition">
-                Start Shopping
-            </a>
+        <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Cart Items -->
+            <div class="lg:w-2/3">
+                <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div class="p-4 bg-gray-50 border-b">
+                        <h2 class="text-lg font-semibold text-gray-700">Items in Your Cart (<?php echo count($cartItems); ?>)</h2>
+                    </div>
+                    
+                    <ul class="divide-y divide-gray-200">
+                        <?php foreach ($cartItems as $item): ?>
+                            <?php
+                            $imagePath = getUploadPath() . $item['image'];
+                            if (!file_exists($imagePath) || empty($item['image'])) {
+                                $imagePath = 'assets/images/default-product.jpg';
+                            } else {
+                                $imagePath = 'uploads/' . $item['image'];
+                            }
+                            ?>
+                            <li class="p-4 hover:bg-gray-50 transition-colors duration-150 cart-item" id="cart-item-<?php echo $item['cart_id']; ?>">
+                                <div class="flex flex-col sm:flex-row items-start sm:items-center">
+                                    <div class="sm:w-20 h-20 flex-shrink-0 mb-3 sm:mb-0">
+                                        <img src="<?php echo htmlspecialchars($imagePath); ?>" alt="<?php echo htmlspecialchars($item['name']); ?>" 
+                                             class="w-full h-full object-cover rounded">
+                                    </div>
+                                    
+                                    <div class="flex-1 ml-0 sm:ml-4">
+                                        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start">
+                                            <div>
+                                                <h3 class="text-lg font-semibold text-gray-800 hover:text-red-600">
+                                                    <a href="product.php?id=<?php echo $item['id']; ?>"><?php echo htmlspecialchars($item['name']); ?></a>
+                                                </h3>
+                                                <p class="text-sm text-gray-600 mt-1">
+                                                    Unit Price: <?php echo formatPrice($item['price']); ?>
+                                                </p>
+                                            </div>
+                                            
+                                            <div class="mt-3 sm:mt-0 flex flex-col sm:items-end">
+                                                <div class="flex items-center mb-2">
+                                                    <label for="quantity-<?php echo $item['cart_id']; ?>" class="text-sm text-gray-600 mr-2 hidden sm:inline">Qty:</label>
+                                                    <div class="flex items-center border rounded">
+                                                        <button class="px-2 py-1 border-r text-gray-600 hover:bg-gray-100 decrease-qty" 
+                                                                data-cart-id="<?php echo $item['cart_id']; ?>">
+                                                            <i class="fas fa-minus text-xs"></i>
+                                                        </button>
+                                                        <input type="number" id="quantity-<?php echo $item['cart_id']; ?>" 
+                                                               class="w-12 py-1 px-2 text-center cart-qty" 
+                                                               value="<?php echo $item['quantity']; ?>" min="1" max="10"
+                                                               data-cart-id="<?php echo $item['cart_id']; ?>">
+                                                        <button class="px-2 py-1 border-l text-gray-600 hover:bg-gray-100 increase-qty" 
+                                                                data-cart-id="<?php echo $item['cart_id']; ?>">
+                                                            <i class="fas fa-plus text-xs"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="flex items-center justify-between">
+                                                    <span class="font-bold text-green-600 item-subtotal">
+                                                        <?php echo formatPrice($item['subtotal']); ?>
+                                                    </span>
+                                                    <button class="ml-4 text-sm text-red-500 hover:text-red-700 remove-btn"
+                                                            data-cart-id="<?php echo $item['cart_id']; ?>">
+                                                        <i class="fas fa-trash mr-1"></i> Remove
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+                
+                <div class="mt-6 flex justify-between">
+                    <a href="index.php" class="inline-flex items-center text-red-600 hover:text-red-700">
+                        <i class="fas fa-arrow-left mr-2"></i> Continue Shopping
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Order Summary -->
+            <div class="lg:w-1/3">
+                <div class="bg-white rounded-lg shadow-md p-6 sticky top-4">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-4">Order Summary</h2>
+                    
+                    <div class="space-y-3 text-gray-700">
+                        <div class="flex justify-between">
+                            <span>Subtotal</span>
+                            <span id="cart-subtotal"><?php echo formatPrice($cartSubtotal); ?></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Delivery Fee</span>
+                            <span><?php echo formatPrice($deliveryFee); ?></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Tax (5%)</span>
+                            <span id="cart-tax"><?php echo formatPrice($taxAmount); ?></span>
+                        </div>
+                        
+                        <div class="border-t pt-3 mt-3">
+                            <div class="flex justify-between font-bold text-lg">
+                                <span>Total</span>
+                                <span id="cart-total"><?php echo formatPrice($orderTotal); ?></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <a href="checkout.php" class="mt-6 block w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition duration-200 text-center">
+                        Proceed to Checkout
+                    </a>
+                </div>
+            </div>
         </div>
     <?php endif; ?>
 </div>
 
 <script>
-    function updateQuantity(cartId, quantity) {
-        if (quantity <= 0) {
-            if (confirm('Are you sure you want to remove this item from your cart?')) {
-                removeItem(cartId);
-            }
-            return;
-        }
-        
+document.addEventListener('DOMContentLoaded', function() {
+    // Update quantity
+    function updateCartQuantity(cartId, quantity) {
         fetch('ajax/update_cart.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
-            body: `cart_id=${cartId}&quantity=${quantity}`
+            body: 'cart_id=' + cartId + '&quantity=' + quantity
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                // Update quantity display
-                document.getElementById(`quantity-${cartId}`).innerText = quantity;
-                
-                // Update subtotal display
-                document.getElementById(`subtotal-${cartId}`).innerText = data.item_subtotal;
-                
-                // Update cart total
-                document.getElementById('cart-total').innerText = data.cart_subtotal;
-                document.getElementById('grand-total').innerText = data.cart_total;
+            if (data.status === 'success') {
+                // Update UI with new values
+                updateCartTotals();
+                showToast('Cart updated successfully');
             } else {
-                alert('Error: ' + data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
+            showToast('An error occurred', 'error');
         });
     }
     
-    function removeItem(cartId) {
-        fetch('ajax/remove_from_cart.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `cart_id=${cartId}`
-        })
+    // Remove item
+    const removeButtons = document.querySelectorAll('.remove-btn');
+    removeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const cartId = this.getAttribute('data-cart-id');
+            const cartItem = document.getElementById('cart-item-' + cartId);
+            
+            fetch('ajax/remove_from_cart.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'cart_id=' + cartId
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Animate removal of item
+                    cartItem.style.opacity = '0';
+                    cartItem.style.maxHeight = '0';
+                    cartItem.style.transition = 'opacity 0.3s, max-height 0.5s';
+                    
+                    setTimeout(() => {
+                        cartItem.remove();
+                        
+                        // Check if cart is now empty
+                        if (document.querySelectorAll('.cart-item').length === 0) {
+                            location.reload(); // Reload to show empty state
+                        } else {
+                            updateCartTotals();
+                        }
+                    }, 300);
+                    
+                    showToast('Item removed from cart');
+                } else {
+                    showToast(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('An error occurred', 'error');
+            });
+        });
+    });
+    
+    // Quantity input change
+    const quantityInputs = document.querySelectorAll('.cart-qty');
+    quantityInputs.forEach(input => {
+        input.addEventListener('change', function() {
+            const cartId = this.getAttribute('data-cart-id');
+            let quantity = parseInt(this.value);
+            
+            // Ensure quantity is between 1 and 10
+            if (quantity < 1) quantity = 1;
+            if (quantity > 10) quantity = 10;
+            
+            this.value = quantity;
+            updateCartQuantity(cartId, quantity);
+        });
+    });
+    
+    // Increase quantity
+    const increaseButtons = document.querySelectorAll('.increase-qty');
+    increaseButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const cartId = this.getAttribute('data-cart-id');
+            const input = document.getElementById('quantity-' + cartId);
+            let quantity = parseInt(input.value) + 1;
+            
+            if (quantity > 10) quantity = 10;
+            input.value = quantity;
+            updateCartQuantity(cartId, quantity);
+        });
+    });
+    
+    // Decrease quantity
+    const decreaseButtons = document.querySelectorAll('.decrease-qty');
+    decreaseButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const cartId = this.getAttribute('data-cart-id');
+            const input = document.getElementById('quantity-' + cartId);
+            let quantity = parseInt(input.value) - 1;
+            
+            if (quantity < 1) quantity = 1;
+            input.value = quantity;
+            updateCartQuantity(cartId, quantity);
+        });
+    });
+    
+    // Update cart totals
+    function updateCartTotals() {
+        fetch('ajax/get_cart_totals.php')
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                // Remove item from DOM
-                document.getElementById(`cart-item-${cartId}`).remove();
+            if (data.status === 'success') {
+                // Update subtotal and totals
+                document.getElementById('cart-subtotal').textContent = data.subtotal;
+                document.getElementById('cart-tax').textContent = data.tax;
+                document.getElementById('cart-total').textContent = data.total;
                 
-                // Update cart total
-                document.getElementById('cart-total').innerText = data.cart_subtotal;
-                document.getElementById('grand-total').innerText = data.cart_total;
-                
-                // If cart is empty, refresh page to show empty cart message
-                if (data.cart_empty) {
-                    location.reload();
-                }
-            } else {
-                alert('Error: ' + data.message);
+                // Update each item's subtotal
+                data.items.forEach(item => {
+                    const itemElement = document.getElementById('cart-item-' + item.cart_id);
+                    if (itemElement) {
+                        const subtotalElement = itemElement.querySelector('.item-subtotal');
+                        if (subtotalElement) {
+                            subtotalElement.textContent = item.subtotal;
+                        }
+                    }
+                });
             }
         })
-        .catch(error => {
-            console.error('Error:', error);
-        });
+        .catch(error => console.error('Error:', error));
     }
+    
+    // Simple toast notification
+    function showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 z-50 p-4 rounded-lg ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white shadow-lg transform transition-transform duration-300 ease-in-out`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                document.body.removeChild(toast);
+            }, 300);
+        }, 3000);
+    }
+});
 </script>
 
-<?php require_once 'layouts/footer.php'; ?> 
+<?php include 'includes/footer.php'; ?> 

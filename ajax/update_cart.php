@@ -1,81 +1,51 @@
 <?php
-header('Content-Type: application/json');
+session_start();
 require_once '../includes/functions.php';
+
+// Set the content type to JSON
+header('Content-Type: application/json');
 
 // Check if user is logged in
 if (!isLoggedIn()) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'You must be logged in'
-    ]);
+    echo json_encode(['status' => 'error', 'message' => 'You must be logged in to manage your cart']);
     exit;
 }
 
-// Validate cart_id and quantity
-if (!isset($_POST['cart_id']) || !is_numeric($_POST['cart_id']) || 
-    !isset($_POST['quantity']) || !is_numeric($_POST['quantity']) || $_POST['quantity'] <= 0) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Invalid parameters'
-    ]);
+// Validate request method
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid request method']);
     exit;
 }
 
-$cart_id = (int) $_POST['cart_id'];
-$quantity = (int) $_POST['quantity'];
-$user_id = $_SESSION['user_id'];
+// Validate cart ID and quantity
+if (!isset($_POST['cart_id']) || !is_numeric($_POST['cart_id'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid cart item ID']);
+    exit;
+}
+
+if (!isset($_POST['quantity']) || !is_numeric($_POST['quantity'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid quantity']);
+    exit;
+}
+
+$cart_id = (int)$_POST['cart_id'];
+$quantity = (int)$_POST['quantity'];
 
 // Update cart
-$success = updateCartQuantity($cart_id, $quantity);
+$result = updateCart($cart_id, $quantity);
 
-if (!$success) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Failed to update cart'
-    ]);
-    exit;
+// Get updated cart total
+if ($result['status'] === 'success') {
+    $cartItems = getCartItems();
+    $cartTotal = 0;
+    
+    foreach ($cartItems as $item) {
+        $cartTotal += $item['price'] * $item['quantity'];
+    }
+    
+    $result['cart_total'] = formatPrice($cartTotal);
+    $result['cart_count'] = count($cartItems);
 }
 
-// Get updated cart details
-$conn = connectDB();
-
-// Get item details
-$sql = "SELECT c.*, p.price 
-        FROM cart c 
-        JOIN products p ON c.product_id = p.id 
-        WHERE c.id = ? AND c.user_id = ?";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("ii", $cart_id, $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-$item = $result->fetch_assoc();
-
-// Calculate subtotal
-$item_subtotal = $item['price'] * $item['quantity'];
-
-// Get total cart amount
-$sql = "SELECT c.*, p.price 
-        FROM cart c 
-        JOIN products p ON c.product_id = p.id 
-        WHERE c.user_id = ?";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-
-$cart_subtotal = 0;
-while ($row = $result->fetch_assoc()) {
-    $cart_subtotal += $row['price'] * $row['quantity'];
-}
-
-$delivery_fee = 50;
-$cart_total = $cart_subtotal + $delivery_fee;
-
-$conn->close();
-
-echo json_encode([
-    'success' => true,
-    'item_subtotal' => formatPrice($item_subtotal),
-    'cart_subtotal' => formatPrice($cart_subtotal),
-    'cart_total' => formatPrice($cart_total)
-]); 
+// Return JSON response
+echo json_encode($result); 

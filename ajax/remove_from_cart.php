@@ -1,70 +1,67 @@
 <?php
-header('Content-Type: application/json');
+session_start();
 require_once '../includes/functions.php';
+
+// Set the content type to JSON
+header('Content-Type: application/json');
 
 // Check if user is logged in
 if (!isLoggedIn()) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'You must be logged in'
-    ]);
+    echo json_encode(['status' => 'error', 'message' => 'You must be logged in to manage your cart']);
     exit;
 }
 
-// Validate cart_id
+// Validate request method
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid request method']);
+    exit;
+}
+
+// Validate cart ID
 if (!isset($_POST['cart_id']) || !is_numeric($_POST['cart_id'])) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Invalid cart ID'
-    ]);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid cart item ID']);
     exit;
 }
 
-$cart_id = (int) $_POST['cart_id'];
+$cart_id = (int)$_POST['cart_id'];
 $user_id = $_SESSION['user_id'];
 
-// Remove item from cart
-$success = removeFromCart($cart_id);
+$conn = connectDB();
 
-if (!$success) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Failed to remove item from cart'
-    ]);
+// Verify cart item belongs to user
+$sql = "SELECT id FROM cart WHERE id = ? AND user_id = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("ii", $cart_id, $user_id);
+$stmt->execute();
+
+if ($stmt->get_result()->num_rows === 0) {
+    $conn->close();
+    echo json_encode(['status' => 'error', 'message' => 'Cart item not found']);
     exit;
 }
 
-// Get updated cart details
-$conn = connectDB();
+// Delete cart item
+$sql = "DELETE FROM cart WHERE id = ? AND user_id = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("ii", $cart_id, $user_id);
 
-// Get total cart amount
-$sql = "SELECT c.*, p.price 
-        FROM cart c 
-        JOIN products p ON c.product_id = p.id 
-        WHERE c.user_id = ?";
+if (!$stmt->execute()) {
+    $conn->close();
+    echo json_encode(['status' => 'error', 'message' => 'Failed to remove item from cart']);
+    exit;
+}
+
+// Check if cart is now empty
+$sql = "SELECT COUNT(*) as count FROM cart WHERE user_id = ?";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
-$result = $stmt->get_result();
-
-$cart_subtotal = 0;
-$cart_empty = true;
-
-if ($result->num_rows > 0) {
-    $cart_empty = false;
-    while ($row = $result->fetch_assoc()) {
-        $cart_subtotal += $row['price'] * $row['quantity'];
-    }
-}
-
-$delivery_fee = 50;
-$cart_total = $cart_subtotal + ($cart_empty ? 0 : $delivery_fee);
+$cart_empty = ($stmt->get_result()->fetch_assoc()['count'] == 0);
 
 $conn->close();
 
 echo json_encode([
-    'success' => true,
-    'cart_subtotal' => formatPrice($cart_subtotal),
-    'cart_total' => formatPrice($cart_total),
+    'status' => 'success',
+    'message' => 'Item removed from cart',
     'cart_empty' => $cart_empty
 ]); 
