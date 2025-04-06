@@ -200,7 +200,15 @@
                                             <p class="text-sm text-gray-500 mb-2">Product Image</p>
                                             <img src="<?php echo getUploadUrl('../uploads/products/' . $product['image_url']); ?>" 
                                                 alt="<?php echo htmlspecialchars($product['name']); ?>"
-                                                class="rounded-lg h-auto max-w-full object-cover border">
+                                                class="rounded-lg h-auto max-w-full object-cover border"
+                                                onerror="this.src='/uploads/products/default.png'; this.onerror='';">
+                                        </div>
+                                        <?php else: ?>
+                                        <div class="mt-6">
+                                            <p class="text-sm text-gray-500 mb-2">No Product Image</p>
+                                            <div class="rounded-lg h-48 w-full bg-gray-200 flex items-center justify-center border">
+                                                <i class="fas fa-image text-gray-400 text-5xl"></i>
+                                            </div>
                                         </div>
                                         <?php endif; ?>
                                     </div>
@@ -228,15 +236,15 @@
                                         <a href="edit_product.php?id=<?php echo $product_id; ?>" class="text-indigo-600 hover:text-indigo-900 flex items-center">
                                             <i class="fas fa-edit mr-2"></i> Edit Product
                                         </a>
-                                        <a href="#" onclick="confirmDelete(<?php echo $product['id']; ?>, '<?php echo addslashes($product['name']); ?>')" class="text-red-600 hover:text-red-900 flex items-center">
+                                        <a href="delete_product.php?id=<?php echo $product['id']; ?>" onclick="return confirm('Are you sure you want to delete this product?');" class="text-red-600 hover:text-red-900 flex items-center">
                                             <i class="fas fa-trash mr-2"></i> Delete Product
                                         </a>
                                         <?php if ($product['is_available']): ?>
-                                            <a href="edit_product.php?id=<?php echo $product_id; ?>" class="text-orange-600 hover:text-orange-900 flex items-center">
+                                            <a href="toggle_product_status.php?id=<?php echo $product_id; ?>" class="text-orange-600 hover:text-orange-900 flex items-center">
                                                 <i class="fas fa-ban mr-2"></i> Mark as Unavailable
                                             </a>
                                         <?php else: ?>
-                                            <a href="edit_product.php?id=<?php echo $product_id; ?>" class="text-green-600 hover:text-green-900 flex items-center">
+                                            <a href="toggle_product_status.php?id=<?php echo $product_id; ?>" class="text-green-600 hover:text-green-900 flex items-center">
                                                 <i class="fas fa-check-circle mr-2"></i> Mark as Available
                                             </a>
                                         <?php endif; ?>
@@ -274,7 +282,7 @@
                                                 </p>
                                                 <p class="text-xs mt-1">
                                                     <span class="<?php echo getOrderStatusClass($order['status']); ?>">
-                                                        <?php echo getOrderStatusText($order['status']); ?>
+                                                        <?php echo getOrderStatusText($order['status'] ?? 'pending'); ?>
                                                     </span>
                                                 </p>
                                             </div>
@@ -298,12 +306,6 @@
     </div>
     
     <script>
-        function confirmDelete(productId, productName) {
-            if (confirm(`Are you sure you want to delete the product "${productName}"?`)) {
-                window.location.href = `products.php?delete=${productId}`;
-            }
-        }
-        
         function getOrderStatusClass(status) {
             switch(status) {
                 case 'pending': return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800';

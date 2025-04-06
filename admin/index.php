@@ -1,43 +1,50 @@
 <?php
-    $pageTitle = "Admin Dashboard";
+    $pageTitle = "Dashboard";
     require_once '../includes/functions.php';
     
     // Require admin login
     requireAdmin();
     
-    // Get some basic stats
+    // Get dashboard data
     $conn = connectDB();
     
-    // Total orders
-    $sql = "SELECT COUNT(*) as total FROM orders";
-    $result = $conn->query($sql);
-    $totalOrders = $result->fetch_assoc()['total'];
-    
-    // Pending orders
-    $sql = "SELECT COUNT(*) as total FROM orders WHERE order_status = 'confirmed'";
-    $result = $conn->query($sql);
-    $pendingOrders = $result->fetch_assoc()['total'];
-    
-    // Total products
-    $sql = "SELECT COUNT(*) as total FROM products";
-    $result = $conn->query($sql);
-    $totalProducts = $result->fetch_assoc()['total'];
-    
-    // Total customers
-    $sql = "SELECT COUNT(*) as total FROM users";
-    $result = $conn->query($sql);
-    $totalCustomers = $result->fetch_assoc()['total'];
-    
-    // Recent orders
-    $sql = "SELECT o.*, u.name as customer_name 
-            FROM orders o 
-            JOIN users u ON o.user_id = u.id 
-            ORDER BY o.created_at DESC 
-            LIMIT 5";
-    $result = $conn->query($sql);
-    $recentOrders = [];
-    while ($row = $result->fetch_assoc()) {
-        $recentOrders[] = $row;
+    try {
+        // Total orders
+        $sql = "SELECT COUNT(*) as total FROM orders";
+        $result = $conn->query($sql);
+        $total_orders = ($result) ? $result->fetch_assoc()['total'] : 0;
+        
+        // Pending orders
+        $sql = "SELECT COUNT(*) as total FROM orders WHERE status = 'pending' OR status = 'confirmed'";
+        $result = $conn->query($sql);
+        $pending_orders = ($result) ? $result->fetch_assoc()['total'] : 0;
+        
+        // Total products
+        $sql = "SELECT COUNT(*) as total FROM products";
+        $result = $conn->query($sql);
+        $total_products = ($result) ? $result->fetch_assoc()['total'] : 0;
+        
+        // Total customers
+        $sql = "SELECT COUNT(*) as total FROM users";
+        $result = $conn->query($sql);
+        $total_customers = ($result) ? $result->fetch_assoc()['total'] : 0;
+        
+        // Recent orders
+        $sql = "SELECT o.*, u.name as customer_name 
+                FROM orders o 
+                JOIN users u ON o.user_id = u.id 
+                ORDER BY o.order_date DESC 
+                LIMIT 5";
+        $result = $conn->query($sql);
+        $recent_orders = [];
+        
+        if ($result) {
+            while ($row = $result->fetch_assoc()) {
+                $recent_orders[] = $row;
+            }
+        }
+    } catch (Exception $e) {
+        $_SESSION['error'] = "Error retrieving dashboard data: " . $e->getMessage();
     }
     
     $conn->close();
@@ -62,7 +69,7 @@
                     <i class="fas fa-pizza-slice text-yellow-500 text-xl mr-2"></i>
                     <h1 class="text-xl font-bold">Pizza Admin</h1>
                 </div>
-                <p class="text-sm text-gray-400 mt-1">Welcome, <?php echo $_SESSION['admin_name']; ?></p>
+                <p class="text-sm text-gray-400 mt-1">Welcome, <?php echo $_SESSION['admin_name'] ?? 'Admin'; ?></p>
             </div>
             
             <nav class="px-2 py-4 flex-grow">
@@ -111,128 +118,137 @@
             </header>
             
             <main class="p-6">
+                <?php if (isset($_SESSION['error'])): ?>
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                        <?php 
+                            echo $_SESSION['error']; 
+                            unset($_SESSION['error']);
+                        ?>
+                    </div>
+                <?php endif; ?>
+                
+                <?php if (isset($_SESSION['success'])): ?>
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                        <?php 
+                            echo $_SESSION['success']; 
+                            unset($_SESSION['success']);
+                        ?>
+                    </div>
+                <?php endif; ?>
+                
                 <!-- Stats Cards -->
-                <div class="grid grid-cols-4 gap-6 mb-8">
-                    <div class="bg-white rounded-lg shadow p-5">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-blue-500 text-white mr-4">
-                                <i class="fas fa-shopping-cart"></i>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <!-- Total Orders -->
+                    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div class="px-6 py-5 flex items-center">
+                            <div class="rounded-full bg-indigo-100 p-3 mr-4">
+                                <i class="fas fa-shopping-cart text-indigo-600 text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-gray-500 text-sm">Total Orders</p>
-                                <p class="text-2xl font-semibold"><?php echo $totalOrders; ?></p>
+                                <h3 class="text-2xl font-bold text-gray-800"><?php echo $total_orders ?? 0; ?></h3>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="bg-white rounded-lg shadow p-5">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-yellow-500 text-white mr-4">
-                                <i class="fas fa-clock"></i>
+                    <!-- Pending Orders -->
+                    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div class="px-6 py-5 flex items-center">
+                            <div class="rounded-full bg-yellow-100 p-3 mr-4">
+                                <i class="fas fa-clock text-yellow-600 text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-gray-500 text-sm">Pending Orders</p>
-                                <p class="text-2xl font-semibold"><?php echo $pendingOrders; ?></p>
+                                <h3 class="text-2xl font-bold text-gray-800"><?php echo $pending_orders ?? 0; ?></h3>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="bg-white rounded-lg shadow p-5">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-green-500 text-white mr-4">
-                                <i class="fas fa-box"></i>
+                    <!-- Total Products -->
+                    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div class="px-6 py-5 flex items-center">
+                            <div class="rounded-full bg-green-100 p-3 mr-4">
+                                <i class="fas fa-box text-green-600 text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-gray-500 text-sm">Total Products</p>
-                                <p class="text-2xl font-semibold"><?php echo $totalProducts; ?></p>
+                                <h3 class="text-2xl font-bold text-gray-800"><?php echo $total_products ?? 0; ?></h3>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="bg-white rounded-lg shadow p-5">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-purple-500 text-white mr-4">
-                                <i class="fas fa-users"></i>
+                    <!-- Total Customers -->
+                    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div class="px-6 py-5 flex items-center">
+                            <div class="rounded-full bg-purple-100 p-3 mr-4">
+                                <i class="fas fa-users text-purple-600 text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-gray-500 text-sm">Total Customers</p>
-                                <p class="text-2xl font-semibold"><?php echo $totalCustomers; ?></p>
+                                <h3 class="text-2xl font-bold text-gray-800"><?php echo $total_customers ?? 0; ?></h3>
                             </div>
                         </div>
                     </div>
                 </div>
                 
                 <!-- Recent Orders -->
-                <div class="bg-white rounded-lg shadow">
-                    <div class="py-3 px-5 border-b border-gray-200">
+                <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
                         <h3 class="text-lg font-semibold">Recent Orders</h3>
+                        <a href="orders.php" class="text-indigo-600 hover:text-indigo-900 text-sm">
+                            View All
+                        </a>
                     </div>
                     
-                    <div class="p-5">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead>
-                                <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <?php if (empty($recentOrders)): ?>
+                    <?php if (empty($recent_orders)): ?>
+                        <div class="p-6 text-center text-gray-500">
+                            <i class="fas fa-shopping-cart text-gray-300 text-5xl mb-3"></i>
+                            <p>No orders found.</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
                                     <tr>
-                                        <td colspan="6" class="px-4 py-4 text-center text-gray-500">No orders found</td>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                     </tr>
-                                <?php else: ?>
-                                    <?php foreach ($recentOrders as $order): ?>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <?php foreach ($recent_orders as $order): ?>
                                         <tr>
-                                            <td class="px-4 py-4 whitespace-nowrap">#<?php echo $order['id']; ?></td>
-                                            <td class="px-4 py-4 whitespace-nowrap"><?php echo htmlspecialchars($order['customer_name']); ?></td>
-                                            <td class="px-4 py-4 whitespace-nowrap"><?php echo formatPrice($order['total_amount']); ?></td>
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                                    <?php 
-                                                    $statusClass = 'bg-gray-100 text-gray-800';
-                                                    switch ($order['order_status']) {
-                                                        case 'confirmed':
-                                                            $statusClass = 'bg-blue-100 text-blue-800';
-                                                            break;
-                                                        case 'preparing':
-                                                            $statusClass = 'bg-yellow-100 text-yellow-800';
-                                                            break;
-                                                        case 'out_for_delivery':
-                                                            $statusClass = 'bg-purple-100 text-purple-800';
-                                                            break;
-                                                        case 'delivered':
-                                                            $statusClass = 'bg-green-100 text-green-800';
-                                                            break;
-                                                        case 'cancelled':
-                                                            $statusClass = 'bg-red-100 text-red-800';
-                                                            break;
-                                                    }
-                                                    echo $statusClass;
-                                                    ?>">
-                                                    <?php echo getOrderStatusText($order['order_status']); ?>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="text-sm font-medium text-gray-900">#<?php echo $order['id']; ?></span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="text-sm text-gray-500"><?php echo htmlspecialchars($order['customer_name']); ?></span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="text-sm text-gray-500"><?php echo date('M j, Y, g:i a', strtotime($order['order_date'])); ?></span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="text-sm font-medium text-gray-900"><?php echo formatPrice($order['total_amount']); ?></span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="<?php echo getOrderStatusClass($order['status'] ?? 'pending'); ?>">
+                                                    <?php echo getOrderStatusText($order['status'] ?? 'pending'); ?>
                                                 </span>
                                             </td>
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <?php echo date('M d, Y', strtotime($order['created_at'])); ?>
-                                            </td>
-                                            <td class="px-4 py-4 whitespace-nowrap text-sm">
-                                                <a href="view_order.php?id=<?php echo $order['id']; ?>" class="text-indigo-600 hover:text-indigo-900">View</a>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <a href="view_order.php?id=<?php echo $order['id']; ?>" class="text-indigo-600 hover:text-indigo-900">
+                                                    <i class="fas fa-eye"></i> View
+                                                </a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                        
-                        <div class="mt-4 text-right">
-                            <a href="orders.php" class="text-indigo-600 hover:text-indigo-900">View All Orders</a>
+                                </tbody>
+                            </table>
                         </div>
-                    </div>
+                    <?php endif; ?>
                 </div>
             </main>
         </div>

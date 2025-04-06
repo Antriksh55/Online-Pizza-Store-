@@ -328,15 +328,20 @@
     
     <script>
         // Image preview functionality
-        document.getElementById('image').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('preview-img').src = e.target.result;
-                    document.getElementById('image-preview').classList.remove('hidden');
-                }
-                reader.readAsDataURL(file);
+        document.addEventListener('DOMContentLoaded', function() {
+            const imageInput = document.getElementById('image');
+            if (imageInput) {
+                imageInput.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            document.getElementById('preview-img').src = e.target.result;
+                            document.getElementById('image-preview').classList.remove('hidden');
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                });
             }
         });
     </script>

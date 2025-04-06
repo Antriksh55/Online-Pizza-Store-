@@ -1,28 +1,31 @@
 <?php
-    $pageTitle = "Admin Login";
-    require_once '../includes/functions.php';
+    session_start();
+    require_once '../config/database.php';
     
-    // Redirect if already logged in as admin
-    if (isAdmin()) {
-        header("Location: index.php");
-        exit();
-    }
-    
-    $username = '';
+    $username = $password = '';
     $error = '';
+    
+    // Check if admin is already logged in
+    if (isset($_SESSION['admin_id'])) {
+        header('Location: index.php');
+        exit;
+    }
     
     // Handle form submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = trim($_POST['username']);
         $password = $_POST['password'];
         
-        // Validate form inputs
-        if (empty($username) || empty($password)) {
-            $error = "All fields are required";
+        // Validate input
+        if (empty($username)) {
+            $error = 'Username is required';
+        } else if (empty($password)) {
+            $error = 'Password is required';
         } else {
-            // Check admin credentials
+            // Connect to database
             $conn = connectDB();
             
+            // Check if user exists
             $sql = "SELECT * FROM admins WHERE username = ?";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param("s", $username);
@@ -32,20 +35,21 @@
             if ($result->num_rows === 1) {
                 $admin = $result->fetch_assoc();
                 
+                // Verify password
                 if (password_verify($password, $admin['password'])) {
-                    // Login successful
+                    // Password is correct, set session
                     $_SESSION['admin_id'] = $admin['id'];
                     $_SESSION['admin_name'] = $admin['name'];
                     $_SESSION['admin_username'] = $admin['username'];
                     
                     // Redirect to admin dashboard
-                    header("Location: index.php");
-                    exit();
+                    header('Location: index.php');
+                    exit;
                 } else {
-                    $error = "Invalid username or password";
+                    $error = 'Invalid password';
                 }
             } else {
-                $error = "Invalid username or password";
+                $error = 'Username not found';
             }
             
             $conn->close();
@@ -57,59 +61,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $pageTitle; ?> - Pizza Store</title>
+    <title>Admin Login - Pizza Store</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-gray-100 min-h-screen flex items-center justify-center">
-    <div class="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
-        <div class="text-center mb-8">
-            <i class="fas fa-pizza-slice text-red-600 text-4xl mb-4"></i>
-            <h1 class="text-2xl font-bold">Admin Login</h1>
-            <p class="text-gray-600">Pizza Store Management System</p>
+<body class="bg-gray-100 h-screen flex items-center justify-center">
+    <div class="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden">
+        <div class="bg-gray-800 px-6 py-8 text-white text-center">
+            <div class="inline-block p-4 rounded-full bg-gray-700 mb-4">
+                <i class="fas fa-pizza-slice text-yellow-500 text-3xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold">Pizza Store Admin</h1>
+            <p class="text-gray-400 mt-2">Login to manage your store</p>
         </div>
         
-        <?php if (!empty($error)): ?>
-            <div class="mb-4 bg-red-100 text-red-700 p-3 rounded">
-                <?php echo $error; ?>
-            </div>
-        <?php endif; ?>
-        
-        <form method="post" action="login.php">
-            <div class="mb-4">
-                <label for="username" class="block text-gray-700 font-medium mb-2">Username</label>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
-                        <i class="fas fa-user"></i>
-                    </span>
-                    <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>" required 
-                        class="w-full pl-10 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800">
+        <div class="p-6">
+            <?php if (!empty($error)): ?>
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    <?php echo $error; ?>
                 </div>
-            </div>
+            <?php endif; ?>
             
-            <div class="mb-6">
-                <label for="password" class="block text-gray-700 font-medium mb-2">Password</label>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
-                        <i class="fas fa-lock"></i>
-                    </span>
-                    <input type="password" id="password" name="password" required 
-                        class="w-full pl-10 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800">
+            <form action="login.php" method="post">
+                <div class="mb-4">
+                    <label for="username" class="block text-gray-700 text-sm font-bold mb-2">Username</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                            <i class="fas fa-user text-gray-400"></i>
+                        </div>
+                        <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>"
+                            class="block w-full pl-10 py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="Enter your username">
+                    </div>
                 </div>
-            </div>
+                
+                <div class="mb-6">
+                    <label for="password" class="block text-gray-700 text-sm font-bold mb-2">Password</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                            <i class="fas fa-lock text-gray-400"></i>
+                        </div>
+                        <input type="password" id="password" name="password"
+                            class="block w-full pl-10 py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="Enter your password">
+                    </div>
+                </div>
+                
+                <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <i class="fas fa-sign-in-alt mr-2"></i> Login
+                </button>
+            </form>
             
-            <button type="submit" class="w-full bg-gray-800 text-white py-2 rounded-lg font-semibold hover:bg-gray-700 transition">
-                Login
-            </button>
-        </form>
-        
-        <div class="mt-6 text-center">
-            <a href="../index.php" class="text-gray-600 hover:text-red-600">
-                <i class="fas fa-arrow-left mr-1"></i> Back to Website
-            </a>
+            <div class="mt-6 text-center text-sm text-gray-500">
+                <p>Don't have admin access? Contact the site administrator.</p>
+            </div>
         </div>
     </div>
+    
+    <script>
+        // Focus on the username field when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').focus();
+        });
+    </script>
 </body>
 </html> 

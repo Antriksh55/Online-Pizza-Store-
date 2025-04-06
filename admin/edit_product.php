@@ -296,8 +296,10 @@
                                     <?php if (!empty($image_url)): ?>
                                     <div class="mb-4">
                                         <p class="text-sm font-medium text-gray-700 mb-2">Current Image</p>
-                                        <img src="../uploads/products/<?php echo htmlspecialchars($image_url); ?>" alt="<?php echo htmlspecialchars($name); ?>" 
-                                            class="rounded-lg max-h-48 object-contain border">
+                                        <img src="<?php echo getUploadUrl('../uploads/products/' . $image_url); ?>" 
+                                            alt="<?php echo htmlspecialchars($name); ?>" 
+                                            class="rounded-lg max-h-48 object-contain border"
+                                            onerror="this.src='/uploads/products/default.png'; this.onerror='';">
                                     </div>
                                     <?php endif; ?>
                                 </div>
@@ -348,15 +350,20 @@
     
     <script>
         // Image preview functionality
-        document.getElementById('image').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('preview-img').src = e.target.result;
-                    document.getElementById('image-preview').classList.remove('hidden');
-                }
-                reader.readAsDataURL(file);
+        document.addEventListener('DOMContentLoaded', function() {
+            const imageInput = document.getElementById('image');
+            if (imageInput) {
+                imageInput.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            document.getElementById('preview-img').src = e.target.result;
+                            document.getElementById('image-preview').classList.remove('hidden');
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                });
             }
         });
     </script>

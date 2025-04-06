@@ -1,13 +1,16 @@
 <?php
-require_once '../includes/functions.php';
+session_start();
 
-// Clear admin session variables
-$_SESSION['admin_id'] = null;
-$_SESSION['admin_name'] = null;
-$_SESSION['admin_username'] = null;
-
-// Destroy the session
-session_destroy();
+// Check if admin is logged in
+if (isset($_SESSION['admin_id'])) {
+    // Remove admin session variables
+    unset($_SESSION['admin_id']);
+    unset($_SESSION['admin_name']);
+    unset($_SESSION['admin_username']);
+    
+    // Destroy the session
+    session_destroy();
+}
 
 // Redirect to login page
 header("Location: login.php");

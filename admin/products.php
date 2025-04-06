@@ -292,9 +292,15 @@
                                     <?php foreach ($products as $product): ?>
                                         <tr>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <img src="<?php echo getUploadUrl('../uploads/products/' . $product['image_url']); ?>" 
-                                                     alt="<?php echo htmlspecialchars($product['name']); ?>" 
-                                                     class="h-12 w-12 rounded-full object-cover">
+                                                <?php if (!empty($product['image_url'])): ?>
+                                                    <img src="<?php echo getUploadUrl('../uploads/products/' . $product['image_url']); ?>" 
+                                                        alt="<?php echo htmlspecialchars($product['name']); ?>" 
+                                                        class="h-12 w-12 rounded-full object-cover">
+                                                <?php else: ?>
+                                                    <div class="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center">
+                                                        <i class="fas fa-image text-gray-400"></i>
+                                                    </div>
+                                                <?php endif; ?>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <div class="font-medium text-gray-900">
@@ -326,7 +332,7 @@
                                                     <a href="edit_product.php?id=<?php echo $product['id']; ?>" class="text-indigo-600 hover:text-indigo-900">
                                                         <i class="fas fa-edit"></i> Edit
                                                     </a>
-                                                    <a href="#" onclick="confirmDelete(<?php echo $product['id']; ?>, '<?php echo addslashes($product['name']); ?>')" class="text-red-600 hover:text-red-900">
+                                                    <a href="delete_product.php?id=<?php echo $product['id']; ?>" onclick="return confirm('Are you sure you want to delete the product?');" class="text-red-600 hover:text-red-900">
                                                         <i class="fas fa-trash"></i> Delete
                                                     </a>
                                                 </div>
@@ -391,11 +397,7 @@
     </div>
     
     <script>
-        function confirmDelete(productId, productName) {
-            if (confirm(`Are you sure you want to delete the product "${productName}"?`)) {
-                window.location.href = `products.php?delete=${productId}`;
-            }
-        }
+        // Function removed as we now use delete_product.php directly
     </script>
 </body>
 </html> 

@@ -1,10 +1,10 @@
 <?php
 session_start();
-require_once 'config/database.php';
+require_once __DIR__ . '/../config/database.php';
 
 // Authentication functions
 function isLoggedIn() {
-    return isset($_SESSION['user_id']);
+    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
 /**
@@ -18,6 +18,7 @@ function isAdmin() {
 
 function requireLogin() {
     if (!isLoggedIn()) {
+        $_SESSION['error'] = "Please login to continue";
         header("Location: login.php");
         exit();
     }
@@ -25,7 +26,8 @@ function requireLogin() {
 
 function requireAdmin() {
     if (!isAdmin()) {
-        header("Location: admin/login.php");
+        $_SESSION['error'] = "You must be logged in as an admin to access this page";
+        header("Location: /admin/login.php");
         exit();
     }
 }
@@ -226,7 +228,7 @@ function removeFromWishlist($wishlist_id) {
  * @return string Formatted price with currency symbol
  */
 function formatPrice($price) {
-    return '₹' . number_format($price, 2);
+    return '₹' . number_format((float)$price, 2);
 }
 
 // Check if product is in wishlist
@@ -396,7 +398,7 @@ function updateOrderStatus($order_id, $status) {
     
     $conn = connectDB();
     
-    $sql = "UPDATE orders SET order_status = ? WHERE id = ?";
+    $sql = "UPDATE orders SET status = ? WHERE id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("si", $status, $order_id);
     $success = $stmt->execute();
@@ -408,6 +410,7 @@ function updateOrderStatus($order_id, $status) {
 // Get a human-readable order status
 function getOrderStatusText($status) {
     $statuses = [
+        'pending' => 'Pending',
         'confirmed' => 'Order Confirmed',
         'preparing' => 'Preparing',
         'out_for_delivery' => 'Out for Delivery',
@@ -485,6 +488,26 @@ function getUploadUrl($path) {
     // Make sure path starts with a slash for URL
     if (strpos($url_path, '/') !== 0) {
         $url_path = '/' . $url_path;
+    }
+    
+    // Remove any extra slashes
+    $url_path = '/' . ltrim($url_path, '/');
+    
+    // For XAMPP, get the base directory name
+    $doc_root = $_SERVER['DOCUMENT_ROOT'];
+    $current_dir = dirname(dirname(__FILE__));
+    
+    // Calculate the relative path from document root
+    $relative_path = '';
+    if (strpos($current_dir, $doc_root) === 0) {
+        $relative_path = substr($current_dir, strlen($doc_root));
+        $relative_path = str_replace('\\', '/', $relative_path);
+        $relative_path = '/' . ltrim($relative_path, '/');
+    }
+    
+    // Replace the first part of the URL with the base path
+    if (strpos($url_path, $relative_path) !== 0) {
+        $url_path = $relative_path . $url_path;
     }
     
     return $url_path;
